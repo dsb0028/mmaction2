@@ -5,7 +5,9 @@ import glob
 import json
 import os
 import os.path as osp
-
+import pandas as pd
+import numpy as np
+from numpy.random import RandomState
 
 def parse_directory(path,
                     rgb_prefix='img_',
@@ -532,4 +534,114 @@ def parse_diving48_splits():
         test_list.append((vid_name, label))
 
     splits = ((train_list, test_list), )
+    return splits
+
+def parse_baseball_splits():
+    path_for_train_set = 'data/baseball/Ben Hess/videos_train/'
+    path_for_test_set = 'data/baseball/Ben Hess/videos_val/'
+    if (os.path.isdir(path_for_train_set) == False):
+        os.makedirs(path_for_train_set)
+
+    if (os.path.isdir(path_for_test_set) == False):
+        os.makedirs(path_for_test_set)
+
+    #read the dataset
+    df = pd.read_csv('baseball/Ben Hess/Export.csv')
+    #perform training-test split
+    rng = RandomState()
+    train = df.sample(frac=0.8, random_state=rng)
+    test = df.loc[~df.index.isin(train.index)]
+    #train_list = [line_to_map(x) for x in train]
+
+    train_labels = np.unique(train['Pitch Type'])
+    test_labels = np.unique(test['Pitch Type'])
+
+    """
+    Need to ensure that the same labels are present in both training and test set
+    """
+    while len(train_labels) != len(test_labels):
+        train = df.sample(frac=0.8, random_state=rng)
+        test = df.loc[~df.index.isin(train.index)]                       
+        train_labels = np.unique(train['Pitch Type'])
+        test_labels = np.unique(test['Pitch Type'])
+        
+    # iterate on all files to move them to destination folder
+    filesToBeMoved =  [os.path.basename(filepath) for filepath in train['filepaths']]
+
+    # iterate on all files to move them to destination folder
+    for f in filesToBeMoved:
+        src_path = os.path.join(LOCATION_OF_VIDEOS, f)
+        dst_path = os.path.join(path_for_train_set, f)
+        shutil.copy2(src_path, dst_path)
+
+    filesToBeMoved =  [os.path.basename(filepath) for filepath in test['filepaths']]
+    # iterate on all files to move them to destination folder
+    for f in filesToBeMoved:
+        src_path = os.path.join(LOCATION_OF_VIDEOS, f)
+        dst_path = os.path.join(path_for_test_set, f)
+        shutil.copy2(src_path, dst_path)
+
+    """
+    need to read each line from label_map.txt and 
+    store each one as a list of dictionary objects
+    """
+    pitch_labels = list()
+    labels = open("data/baseball/label_map.txt", "r") 
+    # reading the file 
+    data = labels.read() 
+  
+    # replacing end splitting the text  
+    # when newline ('\n') is seen. 
+    pitch_labels = data.split("\n")  
+    labels.close() 
+
+    #print(pitch_labels)
+
+    dictionary = list()
+    for label in pitch_labels:
+        #Get Key Value pairs separately to store in dictionary
+        keyvalue = label.split(":")
+        #Replacing the single quotes in the leading.
+        m= keyvalue[0].strip('\'')
+        m = m.replace("\"", "")
+        dictionary.append({int(keyvalue[0]):keyvalue[1].strip('"\'').strip(' ')})
+
+    pitch_labels = dictionary
+
+    train_annotations = list()
+    for tr in train.itertuples():
+        pitch_type = tr[-5]
+        encoded_label = [list(l.keys())[0] for l in pitch_labels if list(l.values())[0] == pitch_type]
+        train_annotations.append((tr[2],encoded_label[0]))
+
+
+    """
+    Want to ensure that train and test annotations are sorted before being written to files
+    """
+
+    train_annotations.sort(key=lambda tup: tup[0])
+    test_annotations.sort(key=lambda tup: tup[0])
+
+    with open('data/baseball/baseball_train_list_videos.txt', 'w') as outfile:
+    for tuple in train_annotations:
+        outfile.write('%s %s\n' % tuple)
+
+    test_annotations = list()
+    for tst in test.itertuples():
+        pitch_type = tst[-5]
+        encoded_label = [list(l.keys())[0] for l in pitch_labels if list(l.values())[0] == pitch_type]
+        test_annotations.append((tst[2],encoded_label[0]))
+
+    with open('data/baseball/baseball_val_list_videos.txt', 'w') as outfile:
+        for tuple in test_annotations:
+            outfile.write('%s %s\n' % tuple)
+
+    with open('data/baseball/baseball_test_list_videos.txt', 'w') as outfile:
+        for tuple in test_annotations:
+            outfile.write('%s %s\n' % tuple)
+    train_list = train_annotations
+    val_list = test_annotations
+    test_list = test_annotations
+    splits = ((train_list, val_list, test_list), )
+    print(splits)
     return splits
